@@ -11,9 +11,8 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
-
-// CloudMoon's own Google client ID
-const CM_CLIENT_ID     = "196443591263-k5447s9icscrq54n57j29lmvm05addbe.apps.googleusercontent.com";
+//personal id i had so much trouble with this hell nah
+const CM_CLIENT_ID     = "1029543759834-et9pr2p7r9nr5oohrch9vc07nl1q6jds.apps.googleusercontent.com";
 const CM_CLIENT_SECRET = ""; // Not needed for this flow
 const BACKEND_URL      = process.env.BACKEND_URL || "https://cloud-backend-63gq.onrender.com";
 
