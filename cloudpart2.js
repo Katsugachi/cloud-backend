@@ -82,7 +82,7 @@ app.get("/auth/exchange", async (req, res) => {
     const deviceId  = randomUUID();
     const queryUuid = randomUUID();
 
-    const loginUrl = new URL("https://api.prod.geometry.today/login/google");
+    const loginUrl = new URL("https://api.prod.cloudmoonapp.com/login/google");
     loginUrl.searchParams.set("device_type", "web");
     loginUrl.searchParams.set("query_uuid",  queryUuid);
     loginUrl.searchParams.set("device_id",   deviceId);
