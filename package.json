@@ -1,0 +1,11 @@
+{
+  "name": "solus-backend",
+  "version": "1.0.0",
+  "main": "cloudpart2.js",
+  "scripts": {
+    "start": "node cloudpart2.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
