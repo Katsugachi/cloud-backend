@@ -12,14 +12,46 @@ app.use((req, res, next) => {
   next();
 });
 
-async function loginWithEmail(email, password) {
-  const deviceId = randomUUID();
+async function loginWithGoogleIdToken(googleIdToken) {
+  const deviceId  = randomUUID();
   const queryUuid = randomUUID();
 
-  const loginUrl = new URL("https://api.prod.cloudmoonapp.com/login/pwd");
+  // Real endpoint CloudMoon uses (found via network inspection)
+  const loginUrl = new URL("https://api.prod.geometry.today/login/google");
   loginUrl.searchParams.set("device_type", "web");
   loginUrl.searchParams.set("query_uuid", queryUuid);
   loginUrl.searchParams.set("device_id", deviceId);
+  loginUrl.searchParams.set("site", "cm");
+
+  const response = await fetch(loginUrl.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Language": "en",
+      "X-User-Locale": "US"
+    },
+    body: JSON.stringify({ google_id_token: googleIdToken })
+  });
+
+  const json = await response.json();
+  console.log("Google login response:", JSON.stringify(json));
+
+  if (!response.ok || json.code !== 0) {
+    throw new Error(`Google login failed: ${JSON.stringify(json)}`);
+  }
+
+  return { token: json.data.token, user_id: json.data.user_id, deviceId };
+}
+
+async function loginWithEmail(email, password) {
+  const deviceId  = randomUUID();
+  const queryUuid = randomUUID();
+
+  const loginUrl = new URL("https://api.prod.geometry.today/login/pwd");
+  loginUrl.searchParams.set("device_type", "web");
+  loginUrl.searchParams.set("query_uuid", queryUuid);
+  loginUrl.searchParams.set("device_id", deviceId);
+  loginUrl.searchParams.set("site", "cm");
 
   const response = await fetch(loginUrl.toString(), {
     method: "POST",
@@ -39,43 +71,9 @@ async function loginWithEmail(email, password) {
   return { token: json.data.token, user_id: json.data.user_id, deviceId };
 }
 
-async function loginWithGoogleIdToken(googleIdToken) {
-  // googleIdToken is now an OAuth2 access_token, not a JWT ID token
-  const deviceId = randomUUID();
-  const queryUuid = randomUUID();
-
-  const loginUrl = new URL("https://api.prod.cloudmoonapp.com/login/google");
-  loginUrl.searchParams.set("device_type", "web");
-  loginUrl.searchParams.set("query_uuid", queryUuid);
-  loginUrl.searchParams.set("device_id", deviceId);
-
-  const response = await fetch(loginUrl.toString(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-User-Language": "en",
-      "X-User-Locale": "US",
-      "Origin": "https://web.cloudmoonapp.com",
-      "Referer": "https://web.cloudmoonapp.com/"
-    },
-    body: JSON.stringify({ access_token: googleIdToken })
-  });
-
-  const json = await response.json();
-  console.log("Google login response:", JSON.stringify(json));
-
-  if (!response.ok || json.code !== 0) {
-    throw new Error(`Google login failed: ${JSON.stringify(json)}`);
-  }
-
-  return { token: json.data.token, user_id: json.data.user_id, deviceId };
-}
-
 app.get("/user-info", async (req, res) => {
   const {
-    email,
-    password,
-    gid,
+    email, password, gid,
     game = "com.roblox.client",
     res: screenRes = "720x1280"
   } = req.query;
@@ -91,48 +89,38 @@ app.get("/user-info", async (req, res) => {
 
     const { token, user_id, deviceId } = auth;
 
-    const userInfoUrl = new URL("https://api.prod.cloudmoonapp.com/user/info");
+    const headers = { "X-User-Token": token, "X-User-Language": "en", "X-User-Locale": "US" };
+
+    const userInfoUrl = new URL("https://api.prod.geometry.today/user/info");
     userInfoUrl.searchParams.set("device_type", "web");
     userInfoUrl.searchParams.set("query_uuid", randomUUID());
     userInfoUrl.searchParams.set("device_id", deviceId);
+    userInfoUrl.searchParams.set("site", "cm");
+    const userInfo = await (await fetch(userInfoUrl.toString(), { headers })).json();
 
-    const userInfoResponse = await fetch(userInfoUrl.toString(), {
-      headers: { "X-User-Token": token, "X-User-Language": "en", "X-User-Locale": "US" }
-    });
-    const userInfo = await userInfoResponse.json();
-
-    const phoneListUrl = new URL("https://api.prod.cloudmoonapp.com/phone/list");
+    const phoneListUrl = new URL("https://api.prod.geometry.today/phone/list");
     phoneListUrl.searchParams.set("device_type", "web");
     phoneListUrl.searchParams.set("query_uuid", randomUUID());
     phoneListUrl.searchParams.set("device_id", deviceId);
+    phoneListUrl.searchParams.set("site", "cm");
+    const phoneList = await (await fetch(phoneListUrl.toString(), { headers })).json();
 
-    const phoneListResponse = await fetch(phoneListUrl.toString(), {
-      headers: { "X-User-Token": token, "X-User-Language": "en", "X-User-Locale": "US" }
-    });
-    const phoneList = await phoneListResponse.json();
-
-    const phoneConnectUrl = new URL("https://api.prod.cloudmoonapp.com/phone/connect");
+    const phoneConnectUrl = new URL("https://api.prod.geometry.today/phone/connect");
     phoneConnectUrl.searchParams.set("device_type", "web");
     phoneConnectUrl.searchParams.set("query_uuid", randomUUID());
     phoneConnectUrl.searchParams.set("device_id", deviceId);
     phoneConnectUrl.searchParams.set("game_name", game);
     phoneConnectUrl.searchParams.set("screen_res", screenRes);
-
-    const phoneConnectResponse = await fetch(phoneConnectUrl.toString(), {
+    phoneConnectUrl.searchParams.set("site", "cm");
+    const phoneConnect = await (await fetch(phoneConnectUrl.toString(), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-User-Token": token,
-        "X-User-Language": "en",
-        "X-User-Locale": "US"
-      },
+      headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({
         android_id: "1951154706843701248",
         server_id: 22,
         params: JSON.stringify({ language: "en", locale: "us" })
       })
-    });
-    const phoneConnect = await phoneConnectResponse.json();
+    })).json();
 
     res.json({
       login_method: gid ? "google" : "email",
