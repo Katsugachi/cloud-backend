@@ -40,6 +40,7 @@ async function loginWithEmail(email, password) {
 }
 
 async function loginWithGoogleIdToken(googleIdToken) {
+  // googleIdToken is now an OAuth2 access_token, not a JWT ID token
   const deviceId = randomUUID();
   const queryUuid = randomUUID();
 
@@ -48,39 +49,26 @@ async function loginWithGoogleIdToken(googleIdToken) {
   loginUrl.searchParams.set("query_uuid", queryUuid);
   loginUrl.searchParams.set("device_id", deviceId);
 
-  // Try every field name CloudMoon might accept
-  const bodies = [
-    { google_id_token: googleIdToken },
-    { id_token: googleIdToken },
-    { token: googleIdToken },
-    { access_token: googleIdToken },
-    { credential: googleIdToken },
-  ];
+  const response = await fetch(loginUrl.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Language": "en",
+      "X-User-Locale": "US",
+      "Origin": "https://web.cloudmoonapp.com",
+      "Referer": "https://web.cloudmoonapp.com/"
+    },
+    body: JSON.stringify({ access_token: googleIdToken })
+  });
 
-  let lastError = null;
-  for (const body of bodies) {
-    const response = await fetch(loginUrl.toString(), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-User-Language": "en",
-        "X-User-Locale": "US",
-        "Origin": "https://web.cloudmoonapp.com",
-        "Referer": "https://web.cloudmoonapp.com/"
-      },
-      body: JSON.stringify(body)
-    });
+  const json = await response.json();
+  console.log("Google login response:", JSON.stringify(json));
 
-    const json = await response.json();
-    console.log("Tried:", JSON.stringify(body).slice(0, 40), "->", JSON.stringify(json));
-
-    if (json.code === 0) {
-      return { token: json.data.token, user_id: json.data.user_id, deviceId };
-    }
-    lastError = json;
+  if (!response.ok || json.code !== 0) {
+    throw new Error(`Google login failed: ${JSON.stringify(json)}`);
   }
 
-  throw new Error(`Google login failed all attempts. Last: ${JSON.stringify(lastError)}`);
+  return { token: json.data.token, user_id: json.data.user_id, deviceId };
 }
 
 app.get("/user-info", async (req, res) => {
