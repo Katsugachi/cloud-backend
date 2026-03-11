@@ -91,40 +91,39 @@ app.get("/launch", async (req, res) => {
   try {
     const headers = { ...cmHeaders(token), "Content-Type": "application/json" };
 
-    // Step 1 — phone/connect: tells CloudMoon to allocate an Android VM
+    // Step 1: phone/list to get correct server_id for this user
+    const plRes  = await fetch(cmUrl("/phone/list"), { headers: cmHeaders(token) });
+    const plJson = await plRes.json();
+    console.log("[/launch] phone/list:", JSON.stringify(plJson).slice(0, 500));
+
+    const phoneEntry    = plJson?.data?.list?.[0];
+    const serverId      = phoneEntry?.server_id ?? 22;
+    const poolAndroidId = phoneEntry?.android_id ?? "1951154706843701248";
+
+    // Step 2: phone/connect with correct server_id
     const pcRes = await fetch(cmUrl("/phone/connect", { game_name: game, screen_res: "720x1280" }), {
       method: "POST",
       headers,
       body: JSON.stringify({
-        android_id: "1951154706843701248",  // CloudMoon pool device, NOT the user's android_id
-        server_id: 22,
+        android_id: poolAndroidId,
+        server_id:  serverId,
         params: JSON.stringify({ language: "en", locale: "us" })
       })
     });
     const pcJson = await pcRes.json();
-    console.log("[/launch] phone/connect response:", JSON.stringify(pcJson).slice(0, 300));
+    console.log("[/launch] phone/connect:", JSON.stringify(pcJson).slice(0, 800));
 
-    // Extract the real Android VM IP from the connect response
-    // CloudMoon returns it in data.android_ip or data.ip
-    const androidIp =
-      pcJson?.data?.android_ip ||
-      pcJson?.data?.ip         ||
-      pcJson?.data?.androidIp  ||
-      "127.0.0.1";
+    const coorUrl   = pcJson?.data?.coor_url    || "https://coor-la.prod.cloudmoonapp.com";
+    const androidIp = pcJson?.data?.android_ip  || pcJson?.data?.ip || "127.0.0.1";
 
-    const coorUrl = pcJson?.data?.coor_url || "https://coor-la.prod.cloudmoonapp.com";
-
-    // Step 2 — build android_instance_id exactly like cloudpart1.js does
-    const instanceJson = {
+    const androidInstanceId = b64url(JSON.stringify({
       userId:      user_id,
       androidName: "SolusMSDevice",
       androidIp:   androidIp,
       svc:         "",
       coorUrl:     coorUrl
-    };
-    const androidInstanceId = b64url(JSON.stringify(instanceJson));
+    }));
 
-    // Step 3 — build the full run-site URL pointing at YOUR GitHub Pages
     const RUN_SITE = "https://katsugachi.github.io/Experiment-Solus-MS/run-site/index.html";
     const url = RUN_SITE
       + "?userid="              + encodeURIComponent(android_id)
@@ -135,12 +134,16 @@ app.get("/launch", async (req, res) => {
       + "&quality="             + quality
       + "&token="               + encodeURIComponent(token);
 
-    res.json({ url, androidIp, coorUrl, androidInstanceId });
+    // Return full debug info so we can see exactly what CloudMoon returned
+    res.json({
+      url,
+      debug: { androidIp, coorUrl, serverId, poolAndroidId, androidInstanceId, phoneConnectRaw: pcJson, phoneListRaw: plJson }
+    });
   } catch (err) {
     console.error("[/launch]", err.message);
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
 // ════════════════════════════════════════════════════════════════════════════
 //  GET /auth/exchange?id_token=<google_id_token>  (kept for compat)
