@@ -146,7 +146,8 @@ app.get("/launch", async (req, res) => {
   } catch (err) {
     console.error("[/launch]", err.message);
     res.status(500).json({ error: err.message });
-  }}););
+  }
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 //  GET /auth/exchange?id_token=<google_id_token>  (kept for compat)
