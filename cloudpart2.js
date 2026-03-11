@@ -60,8 +60,12 @@ app.get("/auth/token", async (req, res) => {
 
     const android_id = plJson?.data?.list?.[0]?.android_id || "1951154706843701248";
 
+    // uiJson.data.user_id is the numeric account ID (e.g. 4534412071)
+    // android_id from phone/list is the device ID (the big number)
+    const accountUserId = uiJson?.data?.user_id || uiJson?.data?.userId;
+    console.log("[/auth/token] user_id:", accountUserId, "android_id:", android_id);
     res.json({
-      user_id:    uiJson?.data?.user_id,
+      user_id:    accountUserId,
       name:       uiJson?.data?.name,
       email:      uiJson?.data?.email,
       picture:    uiJson?.data?.avatar,
@@ -142,8 +146,7 @@ app.get("/launch", async (req, res) => {
   } catch (err) {
     console.error("[/launch]", err.message);
     res.status(500).json({ error: err.message });
-  }
-}));
+  }}););
 
 // ════════════════════════════════════════════════════════════════════════════
 //  GET /auth/exchange?id_token=<google_id_token>  (kept for compat)
