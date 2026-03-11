@@ -96,7 +96,7 @@ app.get("/launch", async (req, res) => {
       method: "POST",
       headers,
       body: JSON.stringify({
-        android_id,
+        android_id: "1951154706843701248",  // CloudMoon pool device, NOT the user's android_id
         server_id: 22,
         params: JSON.stringify({ language: "en", locale: "us" })
       })
