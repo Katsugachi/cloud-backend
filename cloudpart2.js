@@ -86,17 +86,6 @@ app.get("/auth/token", async (req, res) => {
 //  This is the KEY fix — without phone/connect the coordinator has
 //  no free instance and returns errorCode 1 ("Server is busy").
 // ════════════════════════════════════════════════════════════════════════════
-// Map CloudMoon locale codes to coordinator URLs
-const COOR_BY_LOCALE = {
-  "au": "https://coor-au.prod.cloudmoonapp.com",
-  "us": "https://coor-la.prod.cloudmoonapp.com",
-  "la": "https://coor-la.prod.cloudmoonapp.com",
-  "eu": "https://coor-eu.prod.cloudmoonapp.com",
-  "sg": "https://coor-sg.prod.cloudmoonapp.com",
-  "jp": "https://coor-jp.prod.cloudmoonapp.com",
-  "kr": "https://coor-kr.prod.cloudmoonapp.com",
-};
-
 app.get("/launch", async (req, res) => {
   const { token, android_id, user_id, game, quality = "SD" } = req.query;
   if (!token || !android_id || !user_id || !game) {
@@ -104,45 +93,23 @@ app.get("/launch", async (req, res) => {
   }
 
   try {
-    const headers = { ...cmHeaders(token), "Content-Type": "application/json" };
-
-    // Step 1: phone/list — get locale so we pick the right regional coordinator
+    // Real CloudMoon web app ONLY calls phone/list before launching — no phone/connect.
+    // The run-site handles the VM connection internally using the params we pass.
     const plRes  = await fetch(cmUrl("/phone/list"), { headers: cmHeaders(token) });
     const plJson = await plRes.json();
     console.log("[/launch] phone/list:", JSON.stringify(plJson).slice(0, 500));
 
     const phoneEntry = plJson?.data?.list?.[0];
-    const locale     = phoneEntry?.locale || "us";
-    // Pick coordinator URL based on user's region
-    const coorUrl    = COOR_BY_LOCALE[locale] || "https://coor-la.prod.cloudmoonapp.com";
-    console.log(`[/launch] locale=${locale} → coorUrl=${coorUrl}`);
+    const coorUrl    = "https://coor-la.prod.cloudmoonapp.com";
 
-    // Step 2: phone/connect — allocate a VM slot on the correct regional server
-    // Use the hardcoded pool device ID (not user's android_id) as CloudMoon expects
-    const pcRes = await fetch(cmUrl("/phone/connect", { game_name: game, screen_res: "720x1280" }), {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        android_id: "1951154706843701248",
-        server_id:  22,
-        params: JSON.stringify({ language: "en", locale })
-      })
-    });
-    const pcJson = await pcRes.json();
-    console.log("[/launch] phone/connect:", JSON.stringify(pcJson).slice(0, 800));
-
-    // Use IP from phone/connect if we got one, otherwise 127.0.0.1
-    // (127.0.0.1 still works — coordinator routes by userId+game slot, not IP)
-    const androidIp = pcJson?.data?.android_ip || pcJson?.data?.ip || "127.0.0.1";
-    // If phone/connect returned its own coor_url, prefer that
-    const finalCoorUrl = pcJson?.data?.coor_url || coorUrl;
-
+    // Build instance ID the same way the real app does — coordinator resolves
+    // the actual VM by userId, the IP field is not used for routing
     const androidInstanceId = b64url(JSON.stringify({
       userId:      user_id,
-      androidName: "SolusMSDevice",
-      androidIp:   androidIp,
+      androidName: "chrome_web",
+      androidIp:   "127.0.0.1",
       svc:         "",
-      coorUrl:     finalCoorUrl
+      coorUrl:     coorUrl
     }));
 
     const RUN_SITE = "https://katsugachi.github.io/Experiment-Solus-MS/run-site/index.html";
@@ -150,15 +117,12 @@ app.get("/launch", async (req, res) => {
       + "?userid="              + encodeURIComponent(android_id)
       + "&game="                + encodeURIComponent(game)
       + "&android_instance_id=" + encodeURIComponent(androidInstanceId)
-      + "&coor_url="            + encodeURIComponent(finalCoorUrl)
+      + "&coor_url="            + encodeURIComponent(coorUrl)
       + "&uuid="                + encodeURIComponent(user_id)
       + "&quality="             + quality
       + "&token="               + encodeURIComponent(token);
 
-    res.json({
-      url,
-      debug: { locale, androidIp, coorUrl: finalCoorUrl, androidInstanceId, phoneConnectRaw: pcJson, phoneListRaw: plJson }
-    });
+    res.json({ url, debug: { androidInstanceId, coorUrl, phoneListRaw: plJson } });
   } catch (err) {
     console.error("[/launch]", err.message);
     res.status(500).json({ error: err.message });
