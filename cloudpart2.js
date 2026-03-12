@@ -112,12 +112,20 @@ app.get("/launch", async (req, res) => {
       coorUrl:     coorUrl
     }));
 
+    // The WS proxy on our Render backend spoofs Origin: web.cloudmoonapp.com
+    // so the coordinator accepts it. Pass it as coor_tunnel so run-site tries
+    // it before falling back to katsugachi.github.io.
+    const proxyHost = "cloud-backend-63gq.onrender.com";
+    const coorHost  = coorUrl.replace("https://", "");
+    const proxyUrl  = `wss://${proxyHost}/ws-proxy?target=${coorHost}`;
+
     const RUN_SITE = "https://katsugachi.github.io/Experiment-Solus-MS/run-site/index.html";
     const url = RUN_SITE
       + "?userid="              + encodeURIComponent(android_id)
       + "&game="                + encodeURIComponent(game)
       + "&android_instance_id=" + encodeURIComponent(androidInstanceId)
       + "&coor_url="            + encodeURIComponent(coorUrl)
+      + "&coor_tunnel="         + encodeURIComponent(proxyUrl)
       + "&uuid="                + encodeURIComponent(user_id)
       + "&quality="             + quality
       + "&token="               + encodeURIComponent(token);
@@ -205,4 +213,45 @@ app.get("/user-info", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`Solus MS cloud backend running on port ${PORT}`));
+// app.listen replaced by httpServer.listen below (needed for WS proxy to share port)
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  WebSocket proxy — browsers can't connect to coor-la.prod.cloudmoonapp.com
+//  directly because the coordinator checks the Origin header and rejects
+//  non-cloudmoonapp.com origins. We proxy through here instead.
+//
+//  run-site connects to:  wss://cloud-backend-63gq.onrender.com/ws-proxy
+//  this backend connects to: wss://coor-la.prod.cloudmoonapp.com/client/socket.io
+// ════════════════════════════════════════════════════════════════════════════
+const { createServer } = require("http");
+const { WebSocketServer, WebSocket: WS } = require("ws");
+
+const httpServer = createServer(app);
+const wss = new WebSocketServer({ server: httpServer, path: "/ws-proxy" });
+
+wss.on("connection", (clientWs, req) => {
+  // Get target coor_url from query param e.g. /ws-proxy?target=coor-la.prod.cloudmoonapp.com
+  const url  = new URL(req.url, "http://localhost");
+  const host = url.searchParams.get("target") || "coor-la.prod.cloudmoonapp.com";
+  const targetUrl = `wss://${host}/client/socket.io/?EIO=3&transport=websocket`;
+
+  console.log("[ws-proxy] client → target:", targetUrl);
+
+  const serverWs = new WS(targetUrl, {
+    headers: { Origin: "https://web.cloudmoonapp.com" }  // spoof the origin
+  });
+
+  serverWs.on("open",    ()      => console.log("[ws-proxy] upstream connected"));
+  serverWs.on("message", (data)  => { if (clientWs.readyState === 1) clientWs.send(data); });
+  serverWs.on("close",   (code)  => { if (clientWs.readyState === 1) clientWs.close(code); });
+  serverWs.on("error",   (err)   => console.error("[ws-proxy] upstream error:", err.message));
+
+  clientWs.on("message", (data)  => { if (serverWs.readyState === 1) serverWs.send(data); });
+  clientWs.on("close",   ()      => serverWs.close());
+  clientWs.on("error",   (err)   => console.error("[ws-proxy] client error:", err.message));
+});
+
+// Replace the plain app.listen with httpServer.listen so WS shares the same port
+app.listen = undefined;
+httpServer.listen(PORT, () => console.log(`Solus MS backend + WS proxy running on port ${PORT}`));
