@@ -18,7 +18,7 @@ function cmHeaders(token) {
   return {
     "X-User-Token":    token,
     "X-User-Language": "en",
-    "X-User-Locale":   "CN"
+    "X-User-Locale":   "US"
   };
 }
 
