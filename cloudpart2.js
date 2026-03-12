@@ -86,6 +86,17 @@ app.get("/auth/token", async (req, res) => {
 //  This is the KEY fix — without phone/connect the coordinator has
 //  no free instance and returns errorCode 1 ("Server is busy").
 // ════════════════════════════════════════════════════════════════════════════
+app.get("/debug-sid", async (req, res) => {
+  const { sid, token } = req.query;
+  if (!sid || !token) return res.status(400).json({ error: "Need sid and token" });
+  try {
+    const r = await fetch(`https://api.prod.cloudmoonapp.com/web/sid?sid=${encodeURIComponent(sid)}`, {
+      headers: { "X-User-Token": token, "X-User-Language": "en", "X-User-Locale": "GB" }
+    });
+    res.json(await r.json());
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get("/launch", async (req, res) => {
   const { token, android_id, user_id, game, quality = "SD" } = req.query;
   if (!token || !android_id || !user_id || !game) {
@@ -93,40 +104,29 @@ app.get("/launch", async (req, res) => {
   }
 
   try {
-    // Real CloudMoon flow: POST /web/sid → get a sid → open run-site with ?sid=&quality=
-    // The run-site then fetches /web/sid?sid=... to get all connection params itself.
-    const sidRes = await fetch("https://api.prod.cloudmoonapp.com/web/sid", {
-      method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "X-User-Token":  token,
-        "X-User-Language": "en",
-        "X-User-Locale": "GB",
-        "Origin":        "https://web.cloudmoonapp.com",
-        "Referer":       "https://web.cloudmoonapp.com/"
-      },
-      body: JSON.stringify({
-        android_id,
-        game,
-        quality
-      })
-    });
-    const sidJson = await sidRes.json();
-    console.log("[/launch] /web/sid response:", JSON.stringify(sidJson).slice(0, 500));
+    const plRes  = await fetch(cmUrl("/phone/list"), { headers: cmHeaders(token) });
+    const plJson = await plRes.json();
+    const coorUrl = "https://coor-la.prod.cloudmoonapp.com";
 
-    if (sidJson.code !== 0) {
-      return res.status(500).json({ error: `CloudMoon error ${sidJson.code}: ${sidJson.message}`, raw: sidJson });
-    }
-
-    const sid = sidJson.data?.sid;
-    if (!sid) {
-      return res.status(500).json({ error: "No sid in response", raw: sidJson });
-    }
+    const androidInstanceId = b64url(JSON.stringify({
+      userId:      user_id,
+      androidName: "chrome_web",
+      androidIp:   "127.0.0.1",
+      svc:         "",
+      coorUrl:     coorUrl
+    }));
 
     const RUN_SITE = "https://katsugachi.github.io/Experiment-Solus-MS/run-site/index.html";
-    const url = RUN_SITE + "?sid=" + encodeURIComponent(sid) + "&quality=" + quality;
+    const url = RUN_SITE
+      + "?userid="              + encodeURIComponent(android_id)
+      + "&game="                + encodeURIComponent(game)
+      + "&android_instance_id=" + encodeURIComponent(androidInstanceId)
+      + "&coor_url="            + encodeURIComponent(coorUrl)
+      + "&uuid="                + encodeURIComponent(user_id)
+      + "&quality="             + quality
+      + "&token="               + encodeURIComponent(token);
 
-    res.json({ url, sid, debug: { sidRaw: sidJson } });
+    res.json({ url, debug: { androidInstanceId, decoded: JSON.parse(Buffer.from(androidInstanceId.replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString()) } });
   } catch (err) {
     console.error("[/launch]", err.message);
     res.status(500).json({ error: err.message });
