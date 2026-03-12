@@ -93,44 +93,40 @@ app.get("/launch", async (req, res) => {
   }
 
   try {
-    // Real CloudMoon web app ONLY calls phone/list before launching — no phone/connect.
-    // The run-site handles the VM connection internally using the params we pass.
-    const plRes  = await fetch(cmUrl("/phone/list"), { headers: cmHeaders(token) });
-    const plJson = await plRes.json();
-    console.log("[/launch] phone/list:", JSON.stringify(plJson).slice(0, 500));
+    // Real CloudMoon flow: POST /web/sid → get a sid → open run-site with ?sid=&quality=
+    // The run-site then fetches /web/sid?sid=... to get all connection params itself.
+    const sidRes = await fetch("https://api.prod.cloudmoonapp.com/web/sid", {
+      method: "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "X-User-Token":  token,
+        "X-User-Language": "en",
+        "X-User-Locale": "GB",
+        "Origin":        "https://web.cloudmoonapp.com",
+        "Referer":       "https://web.cloudmoonapp.com/"
+      },
+      body: JSON.stringify({
+        android_id,
+        game,
+        quality
+      })
+    });
+    const sidJson = await sidRes.json();
+    console.log("[/launch] /web/sid response:", JSON.stringify(sidJson).slice(0, 500));
 
-    const phoneEntry = plJson?.data?.list?.[0];
-    const coorUrl    = "https://coor-la.prod.cloudmoonapp.com";
+    if (sidJson.code !== 0) {
+      return res.status(500).json({ error: `CloudMoon error ${sidJson.code}: ${sidJson.message}`, raw: sidJson });
+    }
 
-    // Build instance ID the same way the real app does — coordinator resolves
-    // the actual VM by userId, the IP field is not used for routing
-    const androidInstanceId = b64url(JSON.stringify({
-      userId:      user_id,
-      androidName: "chrome_web",
-      androidIp:   "127.0.0.1",
-      svc:         "",
-      coorUrl:     coorUrl
-    }));
-
-    // The WS proxy on our Render backend spoofs Origin: web.cloudmoonapp.com
-    // so the coordinator accepts it. Pass it as coor_tunnel so run-site tries
-    // it before falling back to katsugachi.github.io.
-    const proxyHost = "cloud-backend-63gq.onrender.com";
-    const coorHost  = coorUrl.replace("https://", "");
-    const proxyUrl  = `wss://${proxyHost}/ws-proxy?target=${coorHost}`;
+    const sid = sidJson.data?.sid;
+    if (!sid) {
+      return res.status(500).json({ error: "No sid in response", raw: sidJson });
+    }
 
     const RUN_SITE = "https://katsugachi.github.io/Experiment-Solus-MS/run-site/index.html";
-    const url = RUN_SITE
-      + "?userid="              + encodeURIComponent(android_id)
-      + "&game="                + encodeURIComponent(game)
-      + "&android_instance_id=" + encodeURIComponent(androidInstanceId)
-      + "&coor_url="            + encodeURIComponent(coorUrl)
-      + "&coor_tunnel="         + encodeURIComponent(proxyUrl)
-      + "&uuid="                + encodeURIComponent(user_id)
-      + "&quality="             + quality
-      + "&token="               + encodeURIComponent(token);
+    const url = RUN_SITE + "?sid=" + encodeURIComponent(sid) + "&quality=" + quality;
 
-    res.json({ url, debug: { androidInstanceId, coorUrl, phoneListRaw: plJson } });
+    res.json({ url, sid, debug: { sidRaw: sidJson } });
   } catch (err) {
     console.error("[/launch]", err.message);
     res.status(500).json({ error: err.message });
